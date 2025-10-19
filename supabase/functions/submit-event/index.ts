@@ -53,7 +53,20 @@ serve(async (req) => {
 
     console.log('Creating Hedera client...');
     const client = Client.forTestnet();
-    client.setOperator(accountId, PrivateKey.fromString(privateKey));
+    
+    // Parse private key - try ED25519 first (most common), then DER format
+    let key;
+    try {
+      key = PrivateKey.fromStringED25519(privateKey);
+    } catch {
+      try {
+        key = PrivateKey.fromStringDer(privateKey);
+      } catch {
+        key = PrivateKey.fromStringECDSA(privateKey);
+      }
+    }
+    
+    client.setOperator(accountId, key);
 
     const message = JSON.stringify({
       eventType,
