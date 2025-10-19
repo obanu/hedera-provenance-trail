@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Search, CheckCircle2, Package, MapPin, Loader2 } from "lucide-react";
 import EventTimeline from "@/components/EventTimeline";
+import QRScanner from "@/components/QRScanner";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
@@ -16,8 +17,7 @@ const Consumer = () => {
   const [events, setEvents] = useState<any[]>([]);
   const { toast } = useToast();
 
-  const handleSearch = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const searchProduct = async (searchTopicId: string) => {
     setLoading(true);
     setProduct(null);
     setEvents([]);
@@ -25,7 +25,7 @@ const Consumer = () => {
     try {
       // Query events from Hedera mirror node
       const { data: eventsData, error: eventsError } = await supabase.functions.invoke('query-events', {
-        body: { topicId }
+        body: { topicId: searchTopicId }
       });
 
       if (eventsError) throw eventsError;
@@ -34,7 +34,7 @@ const Consumer = () => {
       const { data: productData, error: productError } = await supabase
         .from('products')
         .select('*')
-        .eq('topic_id', topicId)
+        .eq('topic_id', searchTopicId)
         .maybeSingle();
 
       if (productError) throw productError;
@@ -76,6 +76,16 @@ const Consumer = () => {
     }
   };
 
+  const handleSearch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await searchProduct(topicId);
+  };
+
+  const handleQRScan = (scannedTopicId: string) => {
+    setTopicId(scannedTopicId);
+    searchProduct(scannedTopicId);
+  };
+
   return (
     <div className="min-h-screen bg-background">
       <Navigation />
@@ -96,30 +106,40 @@ const Consumer = () => {
             <CardDescription>Enter the Hedera Topic ID or scan the QR code on your product</CardDescription>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleSearch} className="flex gap-4">
-              <div className="flex-1">
-                <Label htmlFor="topicId" className="sr-only">Topic ID</Label>
-                <Input
-                  id="topicId"
-                  placeholder="e.g., 0.0.123456"
-                  value={topicId}
-                  onChange={(e) => setTopicId(e.target.value)}
-                  required
-                />
+            <form onSubmit={handleSearch} className="space-y-4">
+              <div className="flex gap-2">
+                <div className="flex-1">
+                  <Label htmlFor="topicId" className="sr-only">Topic ID</Label>
+                  <Input
+                    id="topicId"
+                    placeholder="e.g., 0.0.123456"
+                    value={topicId}
+                    onChange={(e) => setTopicId(e.target.value)}
+                    required
+                  />
+                </div>
+                <Button type="submit" className="bg-gradient-primary hover:opacity-90" disabled={loading}>
+                  {loading ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Searching...
+                    </>
+                  ) : (
+                    <>
+                      <Search className="h-4 w-4 mr-2" />
+                      Search
+                    </>
+                  )}
+                </Button>
               </div>
-              <Button type="submit" className="bg-gradient-primary hover:opacity-90" disabled={loading}>
-                {loading ? (
-                  <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Searching...
-                  </>
-                ) : (
-                  <>
-                    <Search className="h-4 w-4 mr-2" />
-                    Search
-                  </>
-                )}
-              </Button>
+              
+              <div className="flex items-center gap-4">
+                <div className="flex-1 border-t border-border" />
+                <span className="text-xs text-muted-foreground uppercase">or</span>
+                <div className="flex-1 border-t border-border" />
+              </div>
+
+              <QRScanner onScan={handleQRScan} />
             </form>
           </CardContent>
         </Card>
