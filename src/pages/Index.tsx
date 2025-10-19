@@ -31,8 +31,8 @@ const Index = () => {
             Track your product's complete journey from origin to consumer with immutable, 
             timestamped records on the Hedera Consensus Service.
           </p>
-          <div className="flex gap-4 justify-center">
-            <Link to="/producer">
+          <div className="flex gap-4 justify-center flex-wrap">
+            <Link to="/auth">
               <Button size="lg" className="bg-primary-foreground text-primary hover:bg-primary-foreground/90 shadow-glow">
                 <Package className="h-5 w-5 mr-2" />
                 Producer Dashboard

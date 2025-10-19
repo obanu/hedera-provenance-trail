@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import Navigation from "@/components/Navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -6,37 +7,150 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { toast } from "sonner";
-import { Package, Plus, History } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { Package, Plus, History, QrCode } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { QRCodeSVG } from "qrcode.react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 const Producer = () => {
+  const [user, setUser] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
   const [productName, setProductName] = useState("");
-  const [productType, setProductType] = useState("");
-  const [origin, setOrigin] = useState("");
+  const [productDescription, setProductDescription] = useState("");
+  const [eventLocation, setEventLocation] = useState("");
   const [eventType, setEventType] = useState("");
-  const [eventNotes, setEventNotes] = useState("");
-  const [selectedProduct, setSelectedProduct] = useState("");
+  const [eventDetails, setEventDetails] = useState("");
+  const [selectedProductId, setSelectedProductId] = useState("");
+  const [products, setProducts] = useState<any[]>([]);
+  const [submitting, setSubmitting] = useState(false);
+  const [showQR, setShowQR] = useState(false);
+  const [qrTopicId, setQrTopicId] = useState("");
+  
+  const navigate = useNavigate();
+  const { toast } = useToast();
+
+  useEffect(() => {
+    // Check authentication
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        setUser(session.user);
+        loadProducts(session.user.id);
+      } else {
+        navigate("/auth");
+      }
+      setLoading(false);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) {
+        setUser(session.user);
+        loadProducts(session.user.id);
+      } else {
+        navigate("/auth");
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, [navigate]);
+
+  const loadProducts = async (userId: string) => {
+    const { data, error } = await supabase
+      .from('products')
+      .select('*')
+      .eq('created_by', userId)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Error loading products:', error);
+    } else {
+      setProducts(data || []);
+    }
+  };
 
   const handleCreateProduct = async (e: React.FormEvent) => {
     e.preventDefault();
-    // TODO: Integrate with Hedera HCS - Create topic and submit initial message
-    toast.success("Product created successfully!", {
-      description: `${productName} has been registered on Hedera network.`
-    });
-    setProductName("");
-    setProductType("");
-    setOrigin("");
+    setSubmitting(true);
+
+    try {
+      const { data, error } = await supabase.functions.invoke('create-topic', {
+        body: { productName, productDescription }
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: "Product created!",
+        description: `Topic ID: ${data.topicId}`,
+      });
+
+      // Reload products
+      if (user) loadProducts(user.id);
+      
+      // Show QR code
+      setQrTopicId(data.topicId);
+      setShowQR(true);
+      
+      // Reset form
+      setProductName("");
+      setProductDescription("");
+    } catch (error: any) {
+      toast({
+        title: "Error creating product",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleLogEvent = async (e: React.FormEvent) => {
     e.preventDefault();
-    // TODO: Integrate with Hedera HCS - Submit message to existing topic
-    toast.success("Event logged successfully!", {
-      description: `${eventType} event added to product history.`
-    });
-    setEventType("");
-    setEventNotes("");
+    setSubmitting(true);
+
+    try {
+      const selectedProduct = products.find(p => p.id === selectedProductId);
+      if (!selectedProduct) throw new Error('Product not found');
+
+      const { error } = await supabase.functions.invoke('submit-event', {
+        body: {
+          topicId: selectedProduct.topic_id,
+          eventType,
+          location: eventLocation,
+          details: eventDetails,
+        }
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: "Event logged!",
+        description: `${eventType} event added to product history.`,
+      });
+
+      // Reset form
+      setEventType("");
+      setEventLocation("");
+      setEventDetails("");
+    } catch (error: any) {
+      toast({
+        title: "Error logging event",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setSubmitting(false);
+    }
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <p className="text-muted-foreground">Loading...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -70,37 +184,21 @@ const Producer = () => {
                     required
                   />
                 </div>
-                
-                <div>
-                  <Label htmlFor="productType">Product Type</Label>
-                  <Select value={productType} onValueChange={setProductType} required>
-                    <SelectTrigger id="productType">
-                      <SelectValue placeholder="Select type" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="coffee">Coffee Beans</SelectItem>
-                      <SelectItem value="cocoa">Cocoa</SelectItem>
-                      <SelectItem value="tea">Tea</SelectItem>
-                      <SelectItem value="organic">Organic Produce</SelectItem>
-                      <SelectItem value="other">Other</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
 
                 <div>
-                  <Label htmlFor="origin">Origin/Location</Label>
-                  <Input
-                    id="origin"
-                    placeholder="e.g., Yirgacheffe, Ethiopia"
-                    value={origin}
-                    onChange={(e) => setOrigin(e.target.value)}
-                    required
+                  <Label htmlFor="productDescription">Description</Label>
+                  <Textarea
+                    id="productDescription"
+                    placeholder="Product details..."
+                    value={productDescription}
+                    onChange={(e) => setProductDescription(e.target.value)}
+                    rows={3}
                   />
                 </div>
 
-                <Button type="submit" className="w-full bg-gradient-primary hover:opacity-90">
+                <Button type="submit" className="w-full bg-gradient-primary hover:opacity-90" disabled={submitting}>
                   <Plus className="h-4 w-4 mr-2" />
-                  Create Product
+                  {submitting ? "Creating..." : "Create Product"}
                 </Button>
               </form>
             </CardContent>
@@ -119,13 +217,16 @@ const Producer = () => {
               <form onSubmit={handleLogEvent} className="space-y-4">
                 <div>
                   <Label htmlFor="selectProduct">Select Product</Label>
-                  <Select value={selectedProduct} onValueChange={setSelectedProduct} required>
+                  <Select value={selectedProductId} onValueChange={setSelectedProductId} required>
                     <SelectTrigger id="selectProduct">
                       <SelectValue placeholder="Choose product" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="1">Ethiopian Coffee Batch #42</SelectItem>
-                      <SelectItem value="2">Colombian Coffee Batch #18</SelectItem>
+                      {products.map((product) => (
+                        <SelectItem key={product.id} value={product.id}>
+                          {product.name}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -148,37 +249,87 @@ const Producer = () => {
                 </div>
 
                 <div>
-                  <Label htmlFor="eventNotes">Additional Notes</Label>
+                  <Label htmlFor="eventLocation">Location</Label>
+                  <Input
+                    id="eventLocation"
+                    placeholder="e.g., Yirgacheffe, Ethiopia"
+                    value={eventLocation}
+                    onChange={(e) => setEventLocation(e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="eventDetails">Additional Notes</Label>
                   <Textarea
-                    id="eventNotes"
+                    id="eventDetails"
                     placeholder="Optional details about this event..."
-                    value={eventNotes}
-                    onChange={(e) => setEventNotes(e.target.value)}
+                    value={eventDetails}
+                    onChange={(e) => setEventDetails(e.target.value)}
                     rows={3}
                   />
                 </div>
 
-                <Button type="submit" className="w-full bg-gradient-accent hover:opacity-90">
+                <Button type="submit" className="w-full bg-gradient-accent hover:opacity-90" disabled={submitting || !selectedProductId}>
                   <Plus className="h-4 w-4 mr-2" />
-                  Log Event
+                  {submitting ? "Logging..." : "Log Event"}
                 </Button>
               </form>
             </CardContent>
           </Card>
         </div>
 
-        {/* Integration Instructions */}
-        <Card className="mt-8 border-accent/20 bg-card/50">
-          <CardHeader>
-            <CardTitle className="text-accent">Hedera Integration Instructions</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2 text-sm text-muted-foreground">
-            <p><strong>Create Product:</strong> Creates a new HCS topic and submits the initial "Created" message with product metadata.</p>
-            <p><strong>Log Event:</strong> Submits a new ConsensusMessageSubmitTransaction to the product's topic with event details and timestamp.</p>
-            <p>See backend documentation for complete implementation using @hashgraph/sdk.</p>
-          </CardContent>
-        </Card>
+        {/* My Products */}
+        {products.length > 0 && (
+          <Card className="mt-8 shadow-elegant">
+            <CardHeader>
+              <CardTitle className="text-primary">My Products</CardTitle>
+              <CardDescription>Products you've created on the Hedera network</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {products.map((product) => (
+                  <div key={product.id} className="flex items-center justify-between p-4 border border-border rounded-lg">
+                    <div>
+                      <h3 className="font-semibold text-primary">{product.name}</h3>
+                      <p className="text-sm text-muted-foreground">Topic ID: {product.topic_id}</p>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setQrTopicId(product.topic_id);
+                        setShowQR(true);
+                      }}
+                    >
+                      <QrCode className="h-4 w-4 mr-2" />
+                      QR Code
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
       </div>
+
+      {/* QR Code Dialog */}
+      <Dialog open={showQR} onOpenChange={setShowQR}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Product QR Code</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col items-center space-y-4">
+            <QRCodeSVG value={qrTopicId} size={256} />
+            <p className="text-sm text-muted-foreground text-center">
+              Topic ID: {qrTopicId}
+            </p>
+            <p className="text-xs text-muted-foreground text-center">
+              Scan this QR code to track the product's journey
+            </p>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
