@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import Navigation from "@/components/Navigation";
 import { Button } from "@/components/ui/button";
@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { Package, Plus, History, QrCode } from "lucide-react";
+import { Package, Plus, History, QrCode, Download, Copy } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { QRCodeSVG } from "qrcode.react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -26,9 +26,48 @@ const Producer = () => {
   const [submitting, setSubmitting] = useState(false);
   const [showQR, setShowQR] = useState(false);
   const [qrTopicId, setQrTopicId] = useState("");
+  const [qrProductName, setQrProductName] = useState("");
+  const qrRef = useRef<HTMLDivElement>(null);
   
   const navigate = useNavigate();
   const { toast } = useToast();
+
+  const downloadQRCode = () => {
+    const svg = qrRef.current?.querySelector('svg');
+    if (!svg) return;
+
+    const svgData = new XMLSerializer().serializeToString(svg);
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    const img = new Image();
+
+    canvas.width = 512;
+    canvas.height = 512;
+
+    img.onload = () => {
+      ctx?.drawImage(img, 0, 0, 512, 512);
+      const pngFile = canvas.toDataURL('image/png');
+      const downloadLink = document.createElement('a');
+      downloadLink.download = `${qrProductName || 'product'}-qr.png`;
+      downloadLink.href = pngFile;
+      downloadLink.click();
+      
+      toast({
+        title: "QR Code Downloaded",
+        description: "QR code saved successfully",
+      });
+    };
+
+    img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgData)));
+  };
+
+  const copyTopicId = () => {
+    navigator.clipboard.writeText(qrTopicId);
+    toast({
+      title: "Copied!",
+      description: "Topic ID copied to clipboard",
+    });
+  };
 
   useEffect(() => {
     // Check authentication
@@ -89,6 +128,7 @@ const Producer = () => {
       
       // Show QR code
       setQrTopicId(data.topicId);
+      setQrProductName(productName);
       setShowQR(true);
       
       // Reset form
@@ -299,11 +339,12 @@ const Producer = () => {
                       size="sm"
                       onClick={() => {
                         setQrTopicId(product.topic_id);
+                        setQrProductName(product.name);
                         setShowQR(true);
                       }}
                     >
                       <QrCode className="h-4 w-4 mr-2" />
-                      QR Code
+                      View QR
                     </Button>
                   </div>
                 ))}
@@ -315,18 +356,45 @@ const Producer = () => {
 
       {/* QR Code Dialog */}
       <Dialog open={showQR} onOpenChange={setShowQR}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Product QR Code</DialogTitle>
+            <DialogTitle className="text-center text-primary">Product QR Code</DialogTitle>
           </DialogHeader>
-          <div className="flex flex-col items-center space-y-4">
-            <QRCodeSVG value={qrTopicId} size={256} />
-            <p className="text-sm text-muted-foreground text-center">
-              Topic ID: {qrTopicId}
-            </p>
-            <p className="text-xs text-muted-foreground text-center">
-              Scan this QR code to track the product's journey
-            </p>
+          <div className="flex flex-col items-center space-y-6 py-4">
+            <div ref={qrRef} className="p-4 bg-white rounded-lg shadow-elegant">
+              <QRCodeSVG 
+                value={qrTopicId} 
+                size={256}
+                level="H"
+                includeMargin
+              />
+            </div>
+            <div className="w-full space-y-3">
+              <div className="p-3 bg-muted rounded-lg">
+                <p className="text-xs text-muted-foreground mb-1">Topic ID</p>
+                <p className="text-sm font-mono break-all">{qrTopicId}</p>
+              </div>
+              <p className="text-xs text-muted-foreground text-center">
+                Scan this QR code to track the product's journey on the blockchain
+              </p>
+            </div>
+            <div className="flex gap-2 w-full">
+              <Button 
+                onClick={copyTopicId}
+                variant="outline"
+                className="flex-1"
+              >
+                <Copy className="h-4 w-4 mr-2" />
+                Copy ID
+              </Button>
+              <Button 
+                onClick={downloadQRCode}
+                className="flex-1 bg-gradient-primary"
+              >
+                <Download className="h-4 w-4 mr-2" />
+                Download
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
